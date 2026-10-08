@@ -20,8 +20,10 @@ mv compose.yml.new compose.yml
 
 export ARENA_VERSION="$latest"
 docker compose --profile cli pull --quiet
-docker compose up -d --wait db
+docker compose up -d --wait db redpanda
 docker compose run --rm arena db migrate
+docker compose run --rm arena paper init   # only does something the first time
+docker compose up -d --remove-orphans      # (re)start every service on the new image
 echo "$latest" > .deployed
 docker image prune -f >/dev/null
 echo "Deployed $latest"

@@ -18,19 +18,95 @@ services:
       timeout: 3s
       retries: 20
 
+  # The event log. One broker, internal to this compose network only.
+  redpanda:
+    image: redpandadata/redpanda:v26.2.4
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Web UI for watching the log, on the LAN at http://192.168.4.41:8080.
+  # LAN/Tailscale only: never route this through the Cloudflare tunnel (no authentication).
+  console:
+    image: redpandadata/console:v3.12.0
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
   # One-off commands: docker compose run --rm arena backtest --save
-  arena:
+  arena: &arena
     image: ghcr.io/michalomegalul/bot-arena:${ARENA_VERSION:-latest}
     env_file: .env
     environment:
       DATABASE_URL: postgresql://arena:${POSTGRES_PASSWORD}@db:5432/arena
+      KAFKA_BROKERS: redpanda:9092
+      ARENA_TOPIC: arena.paper
     volumes:
-      - arena-data:/app/data
+      - arena-data:/app/data  # data/KILL here stops all trading
     depends_on:
       db:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
     profiles: ["cli"]
+
+  # --- the live paper-trading pipeline: one container per service ---
+  ingest:
+    <<: *arena
+    command: ["ingest"]
+    restart: unless-stopped
+    profiles: []
+  broker:
+    <<: *arena
+    command: ["broker"]
+    restart: unless-stopped
+    profiles: []
+  bot-spy-hodler:
+    <<: *arena
+    command: ["bot", "spy-hodler"]
+    restart: unless-stopped
+    profiles: []
+  bot-momentum:
+    <<: *arena
+    command: ["bot", "momentum"]
+    restart: unless-stopped
+    profiles: []
+  bot-mean-reversion:
+    <<: *arena
+    command: ["bot", "mean-reversion"]
+    restart: unless-stopped
+    profiles: []
+  bot-random-monkey:
+    <<: *arena
+    command: ["bot", "random-monkey"]
+    restart: unless-stopped
+    profiles: []
+  recorder:
+    <<: *arena
+    command: ["recorder"]
+    restart: unless-stopped
+    profiles: []
 
 volumes:
   pgdata:
   arena-data:
+  redpanda-data:

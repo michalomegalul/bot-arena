@@ -85,3 +85,29 @@ def statuses(log: EventLog) -> dict[str, str]:
         if event.type == ev.DECISION:
             out[event.key] = event.data["status"]
     return out
+
+
+def feed_and_wait(log: EventLog, run_event: Event, days, timeout: float = 60.0) -> None:
+    """Replay for separate processes: publish one day, then wait until every bot has decided.
+
+    Services run elsewhere (one process each), following `log`. Without waiting, the next
+    day's prices could reach the broker before a bot's decision for today.
+    """
+    import time
+
+    bots = set(run_event.data["bots"])
+    log.append(run_event)
+    cursor = log.end_offset()
+    for day, day_events in days:
+        for event in day_events:
+            log.append(event)
+        waiting, deadline = set(bots), time.monotonic() + timeout
+        while waiting:
+            for offset, event in log.read(cursor):
+                cursor = offset + 1
+                if event.type == ev.DECISION and event.date == day:
+                    waiting.discard(event.key)
+            if waiting and time.monotonic() > deadline:
+                raise TimeoutError(f"no decision for {day} from: {', '.join(sorted(waiting))}")
+            if waiting:
+                time.sleep(0.01)

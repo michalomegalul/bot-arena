@@ -23,7 +23,20 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://arena:arena@localhost:5432/arena
+      KAFKA_BROKERS: localhost:9092
     steps:
+      # Redpanda needs a custom start command, which service containers can't take.
+      - name: Start Redpanda
+        run: |
+          docker run -d --name redpanda -p 9092:9092 redpandadata/redpanda:v26.2.4 \
+            redpanda start --mode dev-container --smp 1 --memory 1G --overprovisioned \
+            --kafka-addr 0.0.0.0:9092 --advertise-kafka-addr localhost:9092
+          for i in $(seq 60); do
+            docker exec redpanda rpk cluster health | grep -qE 'Healthy:.+true' && exit 0
+            sleep 2
+          done
+          docker logs redpanda
+          exit 1
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --locked

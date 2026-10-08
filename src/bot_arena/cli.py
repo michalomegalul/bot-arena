@@ -125,8 +125,19 @@ def cmd_replay(args: argparse.Namespace) -> None:
     run_event = ev.run(ev.day(closes.index[0]), [b.name for b in bots], STARTING_CASH, 5.0, 0.0)
 
     started = time.perf_counter()
-    services = [BrokerService(), *(BotService(b, limits) for b in bots)]
-    log = replay(services, opens, closes, run_event)
+    if args.kafka:
+        # The services must already be running: arena broker / arena bot <name> --topic <topic>
+        from bot_arena.pipeline.kafka_log import KafkaLog
+        from bot_arena.pipeline.pipeline import feed_and_wait, history_days
+
+        log = KafkaLog(args.kafka)
+        if log.end_offset():
+            raise SystemExit(f"Topic {args.kafka} is not empty; replays need a fresh topic.")
+        feed_and_wait(log, run_event, history_days(opens, closes))
+        time.sleep(2)  # let the last portfolios land
+    else:
+        services = [BrokerService(), *(BotService(b, limits) for b in bots)]
+        log = replay(services, opens, closes, run_event)
     took = time.perf_counter() - started
     print(f"Replayed {len(closes)} days as {log.end_offset():,} events in {took:.1f}s\n")
 
@@ -140,6 +151,83 @@ def cmd_replay(args: argparse.Namespace) -> None:
             f"{bot.label:<19}{got.iloc[-1]:>12,.2f}{expected.iloc[-1]:>12,.2f}  "
             f"{'✓ exact' if same else '✗ DIFFERENT'}  ({status[bot.name]})"
         )
+
+
+def _kill_switch():
+    """Local file/env switch, plus the database switch when a database is configured."""
+    import os
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    if not os.getenv("DATABASE_URL"):
+        return LocalKillSwitch()
+    from bot_arena.db import repository as repo
+
+    return AnyKillSwitch(LocalKillSwitch(), repo.DbKillSwitch(repo.connect()))
+
+
+def cmd_broker(args: argparse.Namespace) -> None:
+    from bot_arena.pipeline.kafka_log import KafkaLog
+    from bot_arena.pipeline.runner import run_forever
+    from bot_arena.pipeline.services import BrokerService
+
+    run_forever(BrokerService(), KafkaLog(args.topic))
+
+
+def cmd_bot(args: argparse.Namespace) -> None:
+    from bot_arena.pipeline.kafka_log import KafkaLog
+    from bot_arena.pipeline.runner import run_forever
+    from bot_arena.pipeline.services import BotService
+
+    bots = {b.name.lower().replace(" ", "-"): b for b in roster(args.seed)}
+    if args.name not in bots:
+        raise SystemExit(f"Unknown bot {args.name!r}. Choose from: {', '.join(bots)}")
+    limits = RiskLimits(allowed_symbols=frozenset(WATCHLIST))
+    run_forever(BotService(bots[args.name], limits, _kill_switch()), KafkaLog(args.topic))
+
+
+def cmd_paper_init(args: argparse.Namespace) -> None:
+    from bot_arena.pipeline import ingest
+    from bot_arena.pipeline.kafka_log import KafkaLog
+
+    bots = roster()
+    started = ingest.seed_run(
+        KafkaLog(args.topic),
+        [b.name for b in bots],
+        STARTING_CASH,
+        args.slippage_bps,
+        args.fee,
+        args.warmup_days,
+        load_settings(),
+        WATCHLIST,
+        datetime.now(ingest.NEW_YORK).date(),
+        emojis={b.name: b.emoji for b in bots},
+    )
+    print("Paper run started." if started else "This topic already has a run; nothing to do.")
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    from bot_arena.pipeline import ingest
+    from bot_arena.pipeline.kafka_log import KafkaLog
+
+    log, settings = KafkaLog(args.topic), load_settings()
+    if args.once:
+        days = ingest.catch_up_days(log, settings, WATCHLIST, datetime.now(UTC))
+        print(f"Ingested {len(days)} day(s): {', '.join(days) or 'nothing new'}")
+    else:
+        ingest.run_ingest(log, settings, WATCHLIST, args.poll_seconds)
+
+
+def cmd_recorder(args: argparse.Namespace) -> None:
+    from bot_arena.db import repository as repo
+    from bot_arena.pipeline.kafka_log import KafkaLog
+    from bot_arena.pipeline.recorder import run_recorder
+
+    log = KafkaLog(args.topic)
+    conn = repo.connect()
+    repo.migrate(conn)
+    run_recorder(conn, log, log.topic)
 
 
 def cmd_account(args: argparse.Namespace) -> None:
@@ -180,7 +268,42 @@ def main() -> None:
 
     p = sub.add_parser("replay", help="push history through the streaming services and compare")
     p.add_argument("--seed", type=int, default=42, help="random seed for the monkey")
+    p.add_argument(
+        "--kafka",
+        metavar="TOPIC",
+        help="replay through Redpanda into a fresh TOPIC (services run separately)",
+    )
     p.set_defaults(func=cmd_replay)
+
+    p = sub.add_parser("broker", help="service: fill every bot's orders and report portfolios")
+    p.add_argument("--topic", default=None, help="event log topic (default: $ARENA_TOPIC or arena.paper)")
+    p.set_defaults(func=cmd_broker)
+
+    p = sub.add_parser(
+        "bot", help="service: run one bot (spy-hodler, momentum, mean-reversion, random-monkey)"
+    )
+    p.add_argument("name")
+    p.add_argument("--topic", default=None, help="event log topic (default: $ARENA_TOPIC or arena.paper)")
+    p.add_argument("--seed", type=int, default=42, help="random seed for the monkey")
+    p.set_defaults(func=cmd_bot)
+
+    paper = sub.add_parser("paper", help="the live paper-trading run").add_subparsers(required=True)
+    p = paper.add_parser("init", help="start a run: write its config and warmup history to the log")
+    p.add_argument("--topic", default=None)
+    p.add_argument("--warmup-days", type=int, default=120, help="price history before day one (>= 50)")
+    p.add_argument("--slippage-bps", type=float, default=5.0)
+    p.add_argument("--fee", type=float, default=0.0)
+    p.set_defaults(func=cmd_paper_init)
+
+    p = sub.add_parser("ingest", help="service: add each finished trading day's prices to the log")
+    p.add_argument("--topic", default=None)
+    p.add_argument("--poll-seconds", type=int, default=300)
+    p.add_argument("--once", action="store_true", help="catch up once and exit")
+    p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("recorder", help="service: mirror the log into the database")
+    p.add_argument("--topic", default=None)
+    p.set_defaults(func=cmd_recorder)
 
     p = sub.add_parser("account", help="check the Alpaca connection")
     p.set_defaults(func=cmd_account)
@@ -188,4 +311,7 @@ def main() -> None:
     register_db(sub)
 
     args = parser.parse_args()
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     args.func(args)

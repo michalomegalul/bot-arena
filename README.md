@@ -9,7 +9,7 @@ Runs on **paper money** (Alpaca paper trading). See [PLAN.md](PLAN.md) for the f
 - [x] **Phase 1: Hello market.** Download daily prices and chart $1000 bought and held in each stock.
 - [x] **Phase 2: Backtester and the first bots.** Four bots race through history, with fees, slippage and a full metrics table.
 - [x] **Phase 3: Database and risk manager.** Kill switch, drawdown breaker, position caps; results stored in Postgres + TimescaleDB.
-- [ ] Phase 4: Streaming pipeline (Redpanda)
+- [x] **Phase 4: Streaming pipeline.** Every bot is its own service on Redpanda, paper trading live on the homelab.
 - [ ] Phase 5: API and arena UI
 - [ ] Phase 6: Claude PM
 - [ ] Phase 7: Deploy to the homelab *(release pipeline done early, see Deployment)*
@@ -94,6 +94,35 @@ With a $1 fee per trade, Momentum drops from $2,062 to $1,610: at $1000, costs m
 - **Prices are adjusted for dividends,** so returns assume dividends were reinvested. A live bot would receive cash instead.
 - **Fills** are at the next open with flat slippage, with no volume or liquidity limits. An order is dropped if its symbol has no price the next morning.
 
+## Streaming pipeline
+
+Live, every part of the arena is a separate service. They talk only through **one ordered event log**, a single-partition Redpanda topic:
+
+```
+ingest ──► bar … bar, close ──► broker ──► fill …, portfolio ──► bot × 4 ──► risk …, decision ──┐
+   ▲                                │                                                           │
+   │                                └───────────────── fills decisions at the next open ◄───────┘
+Alpaca                     recorder ──► PostgreSQL + TimescaleDB (for the UI)
+```
+
+**Why one partition?** Kafka only guarantees order *within* a partition, and the backtest is honest only because events happen in a strict order: prices, then fills at the open, then portfolios, then decisions. With separate topics, a bot could see tomorrow's prices before its own portfolio. One ordered log removes that whole class of bugs.
+
+That design pays off in three ways:
+
+- **Replay = backtest, exactly.** `arena replay` pushes history through the real services. 944 days become 14,965 events, and every bot's equity matches `arena backtest` to the last cent. `arena replay --kafka TOPIC` does the same through Redpanda with each service as its own process (71 s), and tests check it on every push.
+- **Crash-safe.** A restarted service rereads the log to rebuild its state. Every event has a deterministic id, so the service only publishes outputs that are actually missing, for example one lost in a crash. Bots that use an LLM (Phase 6) reuse their logged decisions instead of paying to ask again.
+- **The run explains itself.** Its configuration is the first event, and `warmup` bars give the bots price history from before day one.
+
+Live: `ingest` adds each trading day after Alpaca's calendar says the session closed (half days included). The broker fills the bots' decisions at the next day's open, the same timing as the backtest.
+
+```sh
+arena paper init       # once: run config + 120 days of warmup prices
+arena ingest           # service
+arena broker           # service
+arena bot momentum     # service, one per bot
+arena recorder         # service: log -> database
+```
+
 ## Database
 
 Runs, trades, equity curves and risk events can be stored in **PostgreSQL + TimescaleDB** (equity curves and price bars are hypertables).
@@ -115,7 +144,7 @@ Runs on a Proxmox LXC in the homelab (Debian 13 + Docker), from [`deploy/`](depl
 
 1. Publish a **GitHub Release** (e.g. `v0.3.0`).
 2. The [Release workflow](.github/workflows/release.yml) builds the Docker image on GitHub's runners and pushes it to `ghcr.io/michalomegalul/bot-arena`.
-3. On the server, `arena-deploy.timer` runs [`deploy.sh`](deploy/deploy.sh) every 5 minutes. It sees the new release, pulls the image and the release's `compose.yml`, and runs the database migrations.
+3. On the server, `arena-deploy.timer` runs [`deploy.sh`](deploy/deploy.sh) every 5 minutes. It sees the new release, pulls the image and the release's `compose.yml`, runs the database migrations, and restarts all 10 containers (Redpanda + Console, TimescaleDB, ingest, broker, 4 bots, recorder). Restarted services catch up from the log.
 
 **Deploys are pull-based:** the repo is public, and a self-hosted runner would let any pull request run code inside the home network. Here nothing on GitHub can reach the server; it only ever reads public releases.
 
@@ -124,7 +153,9 @@ Secrets (Alpaca keys, database password) live only in `/opt/bot-arena/.env` on t
 ```sh
 # on the server
 cd /opt/bot-arena
-docker compose run --rm arena backtest --save
+docker compose ps                                  # all services
+docker compose logs -f broker bot-momentum
+docker compose run --rm arena db kill on --reason "stop"   # kill switch
 docker compose run --rm arena db runs
 systemctl list-timers arena-deploy.timer
 ```
