@@ -10,7 +10,7 @@ Runs on **paper money** (Alpaca paper trading). See [PLAN.md](PLAN.md) for the f
 - [x] **Phase 2: Backtester and the first bots.** Four bots race through history, with fees, slippage and a full metrics table.
 - [x] **Phase 3: Database and risk manager.** Kill switch, drawdown breaker, position caps; results stored in Postgres + TimescaleDB.
 - [x] **Phase 4: Streaming pipeline.** Every bot is its own service on Redpanda, paper trading live on the homelab.
-- [ ] Phase 5: API and arena UI
+- [x] **Phase 5: Arena UI.** Leaderboard, equity race, live trade feed and bot pages, on a read-only FastAPI.
 - [ ] Phase 6: Claude PM
 - [ ] Phase 7: Deploy to the homelab *(release pipeline done early, see Deployment)*
 - [ ] Phase 8: Polish
@@ -45,6 +45,21 @@ uv run arena backtest     # race the bots: metrics table + charts/backtest.png
 - **No lookahead:** a bot decides after a day's close, sees only prices up to that day, and its orders fill at the **next day's open**. A test proves the engine never hands a bot future data.
 - **Costs:** every trade pays slippage (5 bps by default) and an optional fee.
 - **No shorting, no margin:** weights must be positive and add up to at most 100%.
+
+## The arena
+
+![Bot Arena: leaderboard, equity race and trade feed](docs/arena.png)
+
+<sub>Screenshot: 2023–2026 history replayed through the live pipeline into the database (development data). The real paper run started on 2026-10-08.</sub>
+
+- **Leaderboard:** each bot's money, return, worst drop, Sharpe and a 30-day sparkline. The benchmark is marked, and eliminated bots are greyed out with 💀.
+- **Equity race:** every bot from $1000 on one chart, SPY dashed.
+- **Trade feed:** trades and risk events, updated live over a WebSocket.
+- **Bot pages:** holdings, equity vs the benchmark, and every trade marked on the price chart.
+
+| | |
+|---|---|
+| ![Bot page](docs/bot.png) | **Stack:** React 19 + TypeScript + Vite and TradingView's Lightweight Charts, on a **read-only** FastAPI ([routes](src/bot_arena/api/ROUTES.md)). A test checks there are no write endpoints, so the public site can't change anything; the kill switch stays on the command line. One Docker image serves both. |
 
 ## Risk manager
 
@@ -144,7 +159,7 @@ Runs on a Proxmox LXC in the homelab (Debian 13 + Docker), from [`deploy/`](depl
 
 1. Publish a **GitHub Release** (e.g. `v0.3.0`).
 2. The [Release workflow](.github/workflows/release.yml) builds the Docker image on GitHub's runners and pushes it to `ghcr.io/michalomegalul/bot-arena`.
-3. On the server, `arena-deploy.timer` runs [`deploy.sh`](deploy/deploy.sh) every 5 minutes. It sees the new release, pulls the image and the release's `compose.yml`, runs the database migrations, and restarts all 10 containers (Redpanda + Console, TimescaleDB, ingest, broker, 4 bots, recorder). Restarted services catch up from the log.
+3. On the server, `arena-deploy.timer` runs [`deploy.sh`](deploy/deploy.sh) every 5 minutes. It sees the new release, pulls the image and the release's `compose.yml`, runs the database migrations, and restarts all 11 containers (Redpanda + Console, TimescaleDB, ingest, broker, 4 bots, recorder, and the web UI on port 8000). Restarted services catch up from the log.
 
 **Deploys are pull-based:** the repo is public, and a self-hosted runner would let any pull request run code inside the home network. Here nothing on GitHub can reach the server; it only ever reads public releases.
 
@@ -163,6 +178,8 @@ systemctl list-timers arena-deploy.timer
 ## Development
 
 ```sh
+uv run arena api --reload        # API on :8000 (needs DATABASE_URL)
+cd web && npm ci && npm run dev  # UI on :5173, proxies /api to :8000 (or VITE_MOCK=1 without an API)
 uv run pytest                    # database tests run when DATABASE_URL is set (they do in CI)
 uv run ruff check . && uv run ruff format .
 ```
