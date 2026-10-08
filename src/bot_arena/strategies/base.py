@@ -10,6 +10,9 @@ from bot_arena.broker import Portfolio
 class Strategy(ABC):
     name: str
     emoji: str
+    # Same history + portfolio -> same decision. False for bots that ask an LLM: after a restart
+    # their past decisions are read back from the log instead of being recomputed.
+    deterministic: bool = True
 
     @abstractmethod
     def decide(self, history: pd.DataFrame, portfolio: Portfolio) -> dict[str, float] | None:

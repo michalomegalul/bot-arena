@@ -110,6 +110,38 @@ def _backtest(args: argparse.Namespace, conn) -> None:
         print(f"Saved as run #{run_id} (see `arena db runs`)")
 
 
+def cmd_replay(args: argparse.Namespace) -> None:
+    """Push history through the streaming services (in memory) and compare with the backtest."""
+    import time
+
+    from bot_arena.pipeline import events as ev
+    from bot_arena.pipeline.pipeline import equity_curves, replay, statuses
+    from bot_arena.pipeline.services import BotService, BrokerService
+
+    bars = data.load_bars()
+    opens, closes = data.prices(bars, "open"), data.prices(bars, "close")
+    limits = RiskLimits(allowed_symbols=frozenset(WATCHLIST))
+    bots = roster(args.seed)
+    run_event = ev.run(ev.day(closes.index[0]), [b.name for b in bots], STARTING_CASH, 5.0, 0.0)
+
+    started = time.perf_counter()
+    services = [BrokerService(), *(BotService(b, limits) for b in bots)]
+    log = replay(services, opens, closes, run_event)
+    took = time.perf_counter() - started
+    print(f"Replayed {len(closes)} days as {log.end_offset():,} events in {took:.1f}s\n")
+
+    curves, status = equity_curves(log), statuses(log)
+    print(f"{'bot':<20}{'pipeline $':>12}{'backtest $':>12}  match")
+    for bot in roster(args.seed):
+        expected = run_backtest(bot, opens, closes, STARTING_CASH, 5.0, 0.0, limits).equity
+        got = curves[bot.name]
+        same = got.tolist() == expected.tolist()
+        print(
+            f"{bot.label:<19}{got.iloc[-1]:>12,.2f}{expected.iloc[-1]:>12,.2f}  "
+            f"{'✓ exact' if same else '✗ DIFFERENT'}  ({status[bot.name]})"
+        )
+
+
 def cmd_account(args: argparse.Namespace) -> None:
     from alpaca.trading.client import TradingClient
 
@@ -145,6 +177,10 @@ def main() -> None:
     p.add_argument("--save", action="store_true", help="store the run in the database (DATABASE_URL)")
     p.add_argument("--out", default="charts/backtest.png")
     p.set_defaults(func=cmd_backtest)
+
+    p = sub.add_parser("replay", help="push history through the streaming services and compare")
+    p.add_argument("--seed", type=int, default=42, help="random seed for the monkey")
+    p.set_defaults(func=cmd_replay)
 
     p = sub.add_parser("account", help="check the Alpaca connection")
     p.set_defaults(func=cmd_account)
