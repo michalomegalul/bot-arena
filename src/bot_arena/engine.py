@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from bot_arena.broker import Fill, SimBroker
-from bot_arena.risk import RiskEvent
+from bot_arena.risk import KillSwitch, RiskEvent, RiskLimits, RiskManager
 from bot_arena.strategies.base import Strategy
 
 
@@ -31,9 +31,16 @@ def run_backtest(
     cash: float,
     slippage_bps: float = 5.0,
     fee_per_trade: float = 0.0,
+    limits: RiskLimits | None = None,
+    kill_switch: KillSwitch | None = None,
 ) -> BacktestResult:
-    """`opens` and `closes`: one row per trading day, one column per symbol."""
+    """`opens` and `closes`: one row per trading day, one column per symbol.
+
+    Every decision goes through a RiskManager. `limits=None` applies only the hard rules
+    (no shorting, no margin).
+    """
     broker = SimBroker(cash, slippage_bps, fee_per_trade)
+    risk = RiskManager(strategy.name, limits or RiskLimits.unlimited(), kill_switch)
     # Value holdings at the last known close if a symbol has a gap.
     valuation = closes.ffill()
     equity, exposure = {}, {}
@@ -50,6 +57,9 @@ def run_backtest(
         exposure[today] = 1 - portfolio.cash / portfolio.equity
 
         if i < len(closes) - 1:  # no point deciding after the last day
-            pending = strategy.decide(closes.iloc[: i + 1], portfolio)
+            # An eliminated bot isn't asked any more (that matters once asking Claude costs money).
+            proposal = None if risk.eliminated else strategy.decide(closes.iloc[: i + 1], portfolio)
+            pending = risk.review(proposal, portfolio, today)
 
-    return BacktestResult(strategy, pd.Series(equity), pd.Series(exposure), broker.fills)
+    status = "eliminated" if risk.eliminated else "active"
+    return BacktestResult(strategy, pd.Series(equity), pd.Series(exposure), broker.fills, risk.events, status)

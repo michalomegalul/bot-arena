@@ -1,6 +1,7 @@
 """Command line entry point: `arena fetch | chart | backtest | account`."""
 
 import argparse
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,7 +9,9 @@ from bot_arena import data, metrics
 from bot_arena.backtest import buy_and_hold
 from bot_arena.chart import plot_equity
 from bot_arena.config import BENCHMARK, STARTING_CASH, WATCHLIST, load_settings
+from bot_arena.db.cli import register as register_db
 from bot_arena.engine import run_backtest
+from bot_arena.risk import AnyKillSwitch, LocalKillSwitch, RiskLimits
 from bot_arena.strategies import SpyHodler, roster
 
 
@@ -38,10 +41,32 @@ def cmd_chart(args: argparse.Namespace) -> None:
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
+    with ExitStack() as stack:
+        conn = None
+        if args.save:
+            from bot_arena.db import repository as repo
+
+            conn = stack.enter_context(repo.connect())
+            repo.migrate(conn)
+        _backtest(args, conn)
+
+
+def _backtest(args: argparse.Namespace, conn) -> None:
+    kill_switch = LocalKillSwitch()
+    if conn is not None:
+        from bot_arena.db.repository import DbKillSwitch
+
+        kill_switch = AnyKillSwitch(kill_switch, DbKillSwitch(conn))
+
     bars = data.load_bars()
     opens, closes = data.prices(bars, "open"), data.prices(bars, "close")
+    if args.no_risk:
+        limits = RiskLimits.unlimited()
+    else:
+        max_dd = args.max_drawdown / 100 if args.max_drawdown else None
+        limits = RiskLimits(max_drawdown=max_dd, allowed_symbols=frozenset(WATCHLIST))
     results = [
-        run_backtest(bot, opens, closes, STARTING_CASH, args.slippage_bps, args.fee)
+        run_backtest(bot, opens, closes, STARTING_CASH, args.slippage_bps, args.fee, limits, kill_switch)
         for bot in roster(args.seed)
     ]
     start, end = closes.index[0].date(), closes.index[-1].date()
@@ -51,15 +76,20 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     )
 
     header = f"{'bot':<20}{'final $':>10}{'return':>9}{'CAGR':>8}{'Sharpe':>8}{'Sortino':>9}"
-    print(header + f"{'max DD':>9}{'trades':>8}{'invested':>10}")
-    print("-" * (len(header) + 27))
+    print(header + f"{'max DD':>9}{'trades':>8}{'invested':>10}{'risk events':>13}  status")
+    print("-" * (len(header) + 48))
     for r in sorted(results, key=lambda r: -r.equity.iloc[-1]):
         eq = r.equity
         print(
             f"{r.strategy.label:<19}{eq.iloc[-1]:>10,.2f}{metrics.total_return(eq):>9.1%}"
             f"{metrics.cagr(eq):>8.1%}{metrics.sharpe(eq):>8.2f}{metrics.sortino(eq):>9.2f}"
             f"{metrics.max_drawdown(eq):>9.1%}{len(r.fills):>8}{r.exposure.mean():>10.0%}"
+            f"{len(r.events):>13}  {'💀 ' if r.status == 'eliminated' else ''}{r.status}"
         )
+    for r in results:
+        for e in r.events:
+            if e.kind in {"eliminated", "kill_switch", "rejected"}:
+                print(f"  {e.date.date()}  {r.strategy.label}: {e.kind}, {e.detail}")
 
     benchmark = next(r for r in results if isinstance(r.strategy, SpyHodler)).strategy.name
     out = Path(args.out)
@@ -71,6 +101,13 @@ def cmd_backtest(args: argparse.Namespace) -> None:
         title=f"Bot Arena backtest: ${STARTING_CASH:,.0f} each, {start} to {end}",
     )
     print(f"\nChart written to {out}")
+
+    if conn is not None:
+        from bot_arena.db.repository import save_backtest
+
+        params = {k: v for k, v in vars(args).items() if k != "func"}
+        run_id = save_backtest(conn, results, params, STARTING_CASH)
+        print(f"Saved as run #{run_id} (see `arena db runs`)")
 
 
 def cmd_account(args: argparse.Namespace) -> None:
@@ -101,11 +138,18 @@ def main() -> None:
     p.add_argument("--slippage-bps", type=float, default=5.0, help="price penalty per trade (default 5)")
     p.add_argument("--fee", type=float, default=0.0, help="dollar fee per trade (default 0)")
     p.add_argument("--seed", type=int, default=42, help="random seed for the monkey")
+    p.add_argument(
+        "--max-drawdown", type=float, default=30, help="eliminate a bot at this %% drop (0 = never)"
+    )
+    p.add_argument("--no-risk", action="store_true", help="turn off the risk manager (hard rules stay)")
+    p.add_argument("--save", action="store_true", help="store the run in the database (DATABASE_URL)")
     p.add_argument("--out", default="charts/backtest.png")
     p.set_defaults(func=cmd_backtest)
 
     p = sub.add_parser("account", help="check the Alpaca connection")
     p.set_defaults(func=cmd_account)
+
+    register_db(sub)
 
     args = parser.parse_args()
     args.func(args)
