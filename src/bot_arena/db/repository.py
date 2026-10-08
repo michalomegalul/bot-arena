@@ -86,7 +86,15 @@ def save_bars(conn: psycopg.Connection, bars: pd.DataFrame) -> int:
     other table, `bars` stores a trading day at 00:00 UTC, so both writers agree on the key.
     """
     rows = [
-        (sym, _ts(pd.Timestamp(ts).tz_convert("America/New_York").strftime("%Y-%m-%d")), float(b.open), float(b.high), float(b.low), float(b.close), float(b.volume))
+        (
+            sym,
+            _ts(pd.Timestamp(ts).tz_convert("America/New_York").strftime("%Y-%m-%d")),
+            float(b.open),
+            float(b.high),
+            float(b.low),
+            float(b.close),
+            float(b.volume),
+        )
         for (sym, ts), b in bars.iterrows()
     ]
     with conn.transaction(), conn.cursor() as cur:
