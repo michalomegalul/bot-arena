@@ -1,0 +1,32 @@
+[project]
+name = "bot-arena"
+version = "0.1.0"
+description = "Trading bots race from $1000 each: rule-based strategies vs Claude vs the S&P 500."
+readme = "README.md"
+authors = [
+    { name = "michalomegalul", email = "dog560154@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alpaca-py>=0.44.0",
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+arena = "bot_arena.cli:main"
+
+[tool.ruff]
+line-length = 110
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
