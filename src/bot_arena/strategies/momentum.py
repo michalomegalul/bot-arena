@@ -1,7 +1,7 @@
 import pandas as pd
 
 from bot_arena.broker import Portfolio
-from bot_arena.indicators import sma
+from bot_arena.indicators import last_sma
 from bot_arena.strategies.base import Strategy
 
 
@@ -21,7 +21,7 @@ class Momentum(Strategy):
         uptrend = {
             sym
             for sym in history.columns
-            if sma(history[sym], self.fast).iloc[-1] > sma(history[sym], self.slow).iloc[-1]
+            if last_sma(history[sym], self.fast) > last_sma(history[sym], self.slow)
         }
         if uptrend == set(portfolio.positions):
             return None

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -26,3 +27,20 @@ def test_rsi_does_not_look_ahead():
     for t in range(len(prices)):
         partial = rsi(prices.iloc[: t + 1], 5)
         assert partial.iloc[-1] == pytest.approx(full.iloc[t], nan_ok=True)
+
+
+def test_last_value_helpers_match_the_full_calculation():
+    from bot_arena.indicators import last_rsi, last_sma
+
+    rng = np.random.default_rng(3)
+    prices = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.02, 2000))))
+    assert last_sma(prices, 50) == pytest.approx(sma(prices, 50).iloc[-1], rel=1e-12)
+    assert last_rsi(prices, 14) == pytest.approx(rsi(prices, 14).iloc[-1], rel=1e-12)
+    assert last_rsi(prices, 2) == pytest.approx(rsi(prices, 2).iloc[-1], rel=1e-12)
+
+
+def test_last_value_helpers_cope_with_not_enough_data():
+    from bot_arena.indicators import last_rsi, last_sma
+
+    empty = pd.Series([np.nan] * 30)
+    assert np.isnan(last_rsi(empty, 14)) and np.isnan(last_sma(empty, 20))

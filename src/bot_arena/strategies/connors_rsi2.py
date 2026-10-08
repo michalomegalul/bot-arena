@@ -1,7 +1,7 @@
 import pandas as pd
 
 from bot_arena.broker import Portfolio
-from bot_arena.indicators import rsi, sma
+from bot_arena.indicators import last_rsi, last_sma
 from bot_arena.strategies.base import Strategy
 
 
@@ -28,10 +28,10 @@ class ConnorsRSI2(Strategy):
                 continue
             price = prices.iloc[-1]
             if sym in portfolio.weights:
-                if price <= sma(prices, self.exit_window).iloc[-1]:
+                if price <= last_sma(prices, self.exit_window):
                     keep[sym] = portfolio.weights[sym]  # no bounce yet: hold
-            elif price > sma(prices, self.trend).iloc[-1] and rsi(prices, 2).iloc[-1] < self.entry:
-                buys.append((rsi(prices, 2).iloc[-1], sym))
+            elif price > last_sma(prices, self.trend) and last_rsi(prices, 2) < self.entry:
+                buys.append((last_rsi(prices, 2), sym))
 
         free = round(1 / self.slot) - len(keep)
         new = [sym for _, sym in sorted(buys)[: max(free, 0)]]  # most oversold first

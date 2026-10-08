@@ -11,8 +11,10 @@ from bot_arena.chart import plot_equity
 from bot_arena.config import BENCHMARK, STARTING_CASH, WATCHLIST, load_settings
 from bot_arena.db.cli import register as register_db
 from bot_arena.engine import run_backtest
+from bot_arena.experiments import register as register_experiments
 from bot_arena.risk import AnyKillSwitch, LocalKillSwitch, RiskLimits
 from bot_arena.strategies import SpyHodler, full_roster, roster
+from bot_arena.study import register as register_study
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
@@ -406,6 +408,8 @@ def main() -> None:
     p.set_defaults(func=cmd_account)
 
     register_db(sub)
+    register_experiments(sub)
+    register_study(sub)
 
     args = parser.parse_args()
     import logging

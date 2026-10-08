@@ -111,6 +111,15 @@ def test_answers_in_the_wrong_format_are_rescued_and_noted():
     data, notes = parse_answer('{"AAPL": 0.15, "SPY": 0.5, "reasoning": "flat", "confidence": 0.6}')
     assert data["targets"] == {"AAPL": 0.15, "SPY": 0.5} and "top level" in notes[0]
 
+    data, notes = parse_answer('{"FUND_1": 0.6, "STOCK_B": 0.25, "reasoning": "anon", "confidence": 0.8}')
+    assert data["targets"] == {"FUND_1": 0.6, "STOCK_B": 0.25}  # anonymized names at the top level
+
+    # Weights twice (top level and under target_weights), reasoning after the code block:
+    raw = '```json\n{"FUND_1": 0.3, "target_weights": {"FUND_1": 0.3, "STOCK_A": 0.2}}\n```\nI like funds.'
+    data, notes = parse_answer(raw)
+    assert data["targets"] == {"FUND_1": 0.3, "STOCK_A": 0.2} and data["reasoning"] == "I like funds."
+    assert "wrote the reasoning outside the JSON" in notes
+
     with pytest.raises(KeyError):
         parse_answer('{"reasoning": "no weights at all", "confidence": 0.2}')
 
@@ -123,3 +132,36 @@ def test_a_rescued_answer_is_still_traded():
         "answer was wrapped in a Markdown code block",
         "used 'weights' instead of 'targets'",
     ]
+
+
+def test_anonymous_mode_hides_names_dates_and_prices():
+    model = FakeModel(answer({"FUND_1": 0.5, "STOCK_A": 0.2}))
+    bot = LLMManager(model, label="anon", anonymize=True, cache_dir=None)
+    history = market()
+    targets = bot.decide(history, EMPTY)
+    prompt = model.prompts[0]
+    for symbol in SYMBOLS:
+        assert symbol not in prompt
+    assert "2026" not in prompt and "trading day 1" in prompt
+    assert f"{history['NVDA'].iloc[-1]:.2f}" not in prompt
+    # The answer is translated back to real tickers.
+    real = {a: s for s, a in bot.aliases.items()}
+    assert targets == {real["FUND_1"]: 0.5, real["STOCK_A"]: 0.2}
+    assert real["FUND_1"] in {"SPY", "QQQ"}
+
+
+def test_aliases_are_stable_and_shuffled():
+    bot = LLMManager(FakeModel(answer({})), label="x", anonymize=True, cache_dir=None)
+    first = dict(bot._alias_map(SYMBOLS))
+    assert bot._alias_map(SYMBOLS) == first
+    assert set(first.values()) == {"FUND_1", "FUND_2", "STOCK_A", "STOCK_B", "STOCK_C"}
+
+
+def test_seeded_sampling_gets_its_own_cache(tmp_path):
+    from bot_arena.strategies.llm import OllamaClient
+
+    assert OllamaClient("m").cache_id == "m"  # default settings keep the old cache valid
+    assert (
+        OllamaClient("m", temperature=0.7, seed=1).cache_id
+        != OllamaClient("m", temperature=0.7, seed=2).cache_id
+    )

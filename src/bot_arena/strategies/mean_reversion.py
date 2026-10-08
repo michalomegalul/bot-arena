@@ -1,7 +1,7 @@
 import pandas as pd
 
 from bot_arena.broker import Portfolio
-from bot_arena.indicators import rsi
+from bot_arena.indicators import last_rsi
 from bot_arena.strategies.base import Strategy
 
 
@@ -18,7 +18,7 @@ class MeanReversion(Strategy):
         self.period, self.buy_below, self.sell_above, self.slot = period, buy_below, sell_above, slot
 
     def decide(self, history: pd.DataFrame, portfolio: Portfolio) -> dict[str, float] | None:
-        strength = {sym: rsi(history[sym].dropna(), self.period).iloc[-1] for sym in history.columns}
+        strength = {sym: last_rsi(history[sym], self.period) for sym in history.columns}  # NaN = too new
 
         keep = {s: w for s, w in portfolio.weights.items() if not strength.get(s, 0) > self.sell_above}
         free_slots = round(1 / self.slot) - len(keep)

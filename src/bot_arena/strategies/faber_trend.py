@@ -1,7 +1,7 @@
 import pandas as pd
 
 from bot_arena.broker import Portfolio
-from bot_arena.indicators import sma
+from bot_arena.indicators import last_sma
 from bot_arena.strategies.base import Strategy
 from bot_arena.strategies.schedule import due
 
@@ -27,7 +27,5 @@ class FaberTrend(Strategy):
         self.started = True
         symbols = [s for s in history.columns if not pd.isna(history[s].iloc[-1])]
         slice_ = 1 / len(symbols)
-        targets = {
-            s: slice_ for s in symbols if history[s].iloc[-1] > sma(history[s].dropna(), self.window).iloc[-1]
-        }
+        targets = {s: slice_ for s in symbols if history[s].iloc[-1] > last_sma(history[s], self.window)}
         return targets
