@@ -25,7 +25,7 @@ export function Journal() {
     for (const e of entries.data ?? []) {
       const b = seen.get(e.bot_id) ?? { id: e.bot_id, name: e.bot, emoji: e.emoji, model: e.model, n: 0, wins: 0 };
       b.n += 1;
-      if (e.outcome != null && e.benchmark_outcome != null && e.outcome > e.benchmark_outcome) b.wins += 1;
+      if (e.outcome != null && e.benchmark_outcome != null && e.outcome - e.benchmark_outcome >= 0.0005) b.wins += 1;
       seen.set(e.bot_id, b);
     }
     return [...seen.values()];
@@ -92,7 +92,9 @@ export function Journal() {
 function Entry({ entry: e, runId }: { entry: JournalEntry; runId: number }) {
   const held = e.targets && Object.keys(e.targets).length > 0;
   const cash = e.targets ? 1 - Object.values(e.targets).reduce((a, b) => a + b, 0) : null;
-  const beat = e.outcome != null && e.benchmark_outcome != null ? e.outcome > e.benchmark_outcome : null;
+  // Within 0.05 percentage points counts as a tie: the displayed numbers would look identical.
+  const diff = e.outcome != null && e.benchmark_outcome != null ? e.outcome - e.benchmark_outcome : null;
+  const verdict = diff == null ? null : Math.abs(diff) < 0.0005 ? "➖" : diff > 0 ? "✅" : "❌";
   return (
     <li className="card journal-entry">
       <header>
@@ -135,7 +137,7 @@ function Entry({ entry: e, runId }: { entry: JournalEntry; runId: number }) {
 
       {e.outcome != null && (
         <footer className="small">
-          {beat ? "✅" : "❌"} until {date(e.until)}: <span className={tone(e.outcome)}>{percent(e.outcome)}</span>
+          {verdict} until {date(e.until)}: <span className={tone(e.outcome)}>{percent(e.outcome)}</span>
           <span className="muted">
             {" "}
             vs SPY <span className={tone(e.benchmark_outcome)}>{percent(e.benchmark_outcome)}</span>

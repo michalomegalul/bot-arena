@@ -95,3 +95,31 @@ def test_full_backtest_goes_through_the_risk_manager():
     assert any(e.kind == "clipped" and "NVDA" in e.detail for e in result.events)  # 90% -> 25%
     assert result.exposure.max() <= 1 + 1e-9
     assert len(bot.journal) == 6  # 60 trading days / every 10 (the last day never decides)
+
+
+def test_answers_in_the_wrong_format_are_rescued_and_noted():
+    from bot_arena.strategies.llm import parse_answer
+
+    raw = '```json\n{"weights": {"SPY": 0.5}, "reasoning": "x", "confidence": 0.7}\n```'
+    data, notes = parse_answer(raw)
+    assert data["targets"] == {"SPY": 0.5}
+    assert "Markdown code block" in notes[0] and "'weights'" in notes[1]
+
+    data, notes = parse_answer('Sure! Here it is: {"targets": {"QQQ": 1}, "reasoning": "y", "confidence": 1}')
+    assert data["targets"] == {"QQQ": 1} and "extra text" in notes[0]
+
+    data, notes = parse_answer('{"AAPL": 0.15, "SPY": 0.5, "reasoning": "flat", "confidence": 0.6}')
+    assert data["targets"] == {"AAPL": 0.15, "SPY": 0.5} and "top level" in notes[0]
+
+    with pytest.raises(KeyError):
+        parse_answer('{"reasoning": "no weights at all", "confidence": 0.2}')
+
+
+def test_a_rescued_answer_is_still_traded():
+    raw = '```json\n{"weights": {"SPY": 1.0}, "reasoning": "index", "confidence": 0.7}\n```'
+    bot = LLMManager(FakeModel(raw), cache_dir=None)
+    assert bot.decide(market(), EMPTY) == {"SPY": 1.0}
+    assert bot.journal[0].notes[:2] == [
+        "answer was wrapped in a Markdown code block",
+        "used 'weights' instead of 'targets'",
+    ]

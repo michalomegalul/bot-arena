@@ -69,6 +69,42 @@ The six research bots use their published parameters, untuned. Sources, rules, e
 |---|---|
 | ![Bot page](docs/bot.png) | **Stack:** React 19 + TypeScript + Vite and TradingView's Lightweight Charts, on a **read-only** FastAPI ([routes](src/bot_arena/api/ROUTES.md)). A test checks there are no write endpoints, so the public site can't change anything; the kill switch stays on the command line. One Docker image serves both. |
 
+## AI tournament
+
+Four local models (on a Radeon RX 6700 XT via Ollama) against all ten rule bots. The window is **Jan 2 to Oct 7, 2026**, after the models' training data, so they can't remember what happened. Each AI decides every 5 trading days, and everyone goes through the same risk manager.
+
+```sh
+arena tournament --models "gemma3:12b=Gemma 3 12B,gemma4:e4b=Gemma 4 e4b,qwen2.5-coder:14b=Qwen 2.5 Coder 14B,qwen3:8b=Qwen 3 8B"
+```
+
+| Bot | Final | Return | Sharpe | Max DD | Trades |
+|---|---|---|---|---|---|
+| 🥇 Dual Momentum | $1,227 | +22.7% | 1.42 | −11.7% | 1 |
+| 🦾 AI Gemma 4 e4b | $1,209 | +20.9% | 1.37 | −14.2% | 52 |
+| 🧠 AI Qwen 2.5 Coder 14B | $1,208 | +20.8% | 1.49 | −11.0% | 11 |
+| 🤖 AI Gemma 3 12B | $1,189 | +18.9% | 1.48 | −9.9% | 60 |
+| 👾 AI Qwen 3 8B | $1,186 | +18.6% | 1.26 | −10.0% | 17 |
+| 🏆 Winners 12-1 | $1,182 | +18.2% | 1.26 | −11.4% | 14 |
+| 🐒 Random Monkey | $1,168 | +16.8% | 1.42 | −6.8% | 68 |
+| 🍰 Equal Weight | $1,147 | +14.7% | 1.00 | −14.2% | 10 |
+| 🐢 **SPY Hodler** | **$1,140** | **+14.0%** | **1.39** | **−8.9%** | 1 |
+| 🎯 Connors RSI2 | $1,119 | +11.9% | 1.59 | −4.7% | 88 |
+| 🎚️ Vol Target | $1,115 | +11.5% | 1.20 | −8.9% | 5 |
+| 🔄 Mean Reversion | $1,110 | +11.0% | 2.24 | −3.6% | 14 |
+| 📈 Momentum | $1,017 | +1.7% | 0.22 | −10.6% | 77 |
+| 🧭 Faber Trend | $989 | −1.1% | −0.01 | −10.6% | 20 |
+
+**What it means:**
+
+- **Every AI beat SPY on money, but not because it was smart.** 2026 was a tech year: QQQ +24%, NVDA +26% and Apple +25%, against SPY +14.7% and Tesla −13.8%. All four models held mostly QQQ, Nvidia and Apple and avoided Tesla. Simply holding QQQ (+24%) beats every bot here, AI or not. Dual Momentum's single trade was "buy QQQ".
+- **On risk-adjusted return they're about level with SPY** (Sharpe 1.26–1.49 vs 1.39), from one window, one run, at temperature 0. That's not evidence of skill.
+- **The models are confidently samey.** Confidence never dropped below 0.70, and their portfolios barely differ.
+- **Following instructions is a real differentiator.** Gemma 4 ignored the JSON format in all 39 answers (code blocks, wrong field names, weights at the top level) and asked to break the 25% limit 22 times. Qwen 3 wrote percentages instead of fractions every time. All of it is cleaned up and **noted in the AI Journal**, and the risk manager trims what's over the limits.
+
+The **AI Journal** page shows every decision in the model's own words, what had to be fixed, and whether it beat SPY until the next decision.
+
+![AI Journal](docs/journal.png)
+
 ## Risk manager
 
 Bots only *propose* trades. Every proposal passes the risk manager first, which can shrink, drop or block it, but never make it bigger.

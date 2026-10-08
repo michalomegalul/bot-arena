@@ -138,8 +138,9 @@ class LLMManager(Strategy):
         for attempt in range(2):
             try:
                 raw, stats, cached = self._chat_cached(system, user)
-                data = json.loads(raw)
+                data, format_notes = parse_answer(raw)
                 targets, notes = clean_targets(data.get("targets"), symbols)
+                notes = format_notes + notes
                 confidence = data.get("confidence")
                 confidence = float(confidence) if isinstance(confidence, int | float) else None
                 return JournalEntry(
@@ -172,6 +173,44 @@ class LLMManager(Strategy):
 
     def journal_dicts(self) -> list[dict]:
         return [asdict(e) for e in self.journal]
+
+
+TARGET_SYNONYMS = ("targets", "weights", "allocation", "allocations", "portfolio")
+
+
+def parse_answer(raw: str) -> tuple[dict, list[str]]:
+    """The model's JSON, even if it ignored the requested format. Every fix is noted."""
+    notes, text = [], raw.strip()
+    if text.startswith("```"):
+        notes.append("answer was wrapped in a Markdown code block")
+        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        text = text.rsplit("```", 1)[0]
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        data = json.loads(text[start : end + 1])
+        notes.append("answer had extra text around the JSON")
+    if not isinstance(data, dict):
+        raise TypeError(f"answer is not a JSON object: {data!r}")
+    if "targets" not in data:
+        key = next((k for k in TARGET_SYNONYMS if k in data), None)
+        tickers = {
+            k: v
+            for k, v in data.items()
+            if isinstance(v, int | float) and k.isalpha() and k.isupper() and len(k) <= 5
+        }
+        if key is not None:
+            notes.append(f"used {key!r} instead of 'targets'")
+            data["targets"] = data.pop(key)
+        elif tickers:
+            notes.append("put the weights at the top level instead of under 'targets'")
+            data["targets"] = tickers
+        else:
+            raise KeyError("answer has no targets")
+    return data, notes
 
 
 def clean_targets(targets, symbols: list[str]) -> tuple[dict[str, float], list[str]]:
