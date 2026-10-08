@@ -160,3 +160,36 @@ def test_feed_for_unknown_run_closes(client):
     with pytest.raises(WebSocketDisconnect) as closed, client.websocket_connect("/api/runs/999/feed") as ws:
         ws.receive_json()
     assert closed.value.code == 4404
+
+
+def test_journal_entries_come_with_their_outcome(client, seeded, url):
+    run_id, results = seeded
+    spy, monkey = results["SPY Hodler"].equity, results["Random Monkey"].equity
+    days = [spy.index[10], spy.index[20]]
+    journals = {
+        "Random Monkey": [
+            {
+                "date": str(d.date()),
+                "model": "fake",
+                "targets": {"SPY": 0.5},
+                "reasoning": f"call {i}",
+                "confidence": 0.5,
+                "notes": [],
+                "stats": {"seconds": 1.5},
+            }
+            for i, d in enumerate(days)
+        ]
+    }
+    with repo.connect(url) as conn:
+        assert repo.save_journals(conn, run_id, journals) == 2
+        assert repo.save_journals(conn, run_id, journals) == 2  # idempotent (ON CONFLICT DO NOTHING)
+
+    entries = client.get(f"/api/runs/{run_id}/journal").json()
+    assert [e["reasoning"] for e in entries] == ["call 1", "call 0"]  # newest first
+    older, newer = entries[1], entries[0]
+    # The older call is judged until the next call; the newest until the latest close.
+    assert older["until"] == newer["t"]
+    assert older["outcome"] == pytest.approx(monkey[days[1]] / monkey[days[0]] - 1)
+    assert older["benchmark_outcome"] == pytest.approx(spy[days[1]] / spy[days[0]] - 1)
+    assert newer["until"] == "2026-04-24"
+    assert newer["seconds"] == 1.5

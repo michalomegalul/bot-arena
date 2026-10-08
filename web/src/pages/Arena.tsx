@@ -147,7 +147,7 @@ export function Arena() {
   );
 }
 
-function RunPicker({ runs, value, onChange }: { runs: Run[]; value: number; onChange: (id: string) => void }) {
+export function RunPicker({ runs, value, onChange }: { runs: Run[]; value: number; onChange: (id: string) => void }) {
   const label = (r: Run) =>
     r.kind === "paper" || r.kind === "live"
       ? `${r.kind === "paper" ? "Paper run" : "Live run"} · since ${date(r.start_date)}`

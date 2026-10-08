@@ -11,7 +11,7 @@ Runs on **paper money** (Alpaca paper trading). See [PLAN.md](PLAN.md) for the f
 - [x] **Phase 3: Database and risk manager.** Kill switch, drawdown breaker, position caps; results stored in Postgres + TimescaleDB.
 - [x] **Phase 4: Streaming pipeline.** Every bot is its own service on Redpanda, paper trading live on the homelab.
 - [x] **Phase 5: Arena UI.** Leaderboard, equity race, live trade feed and bot pages, on a read-only FastAPI.
-- [ ] Phase 6: Claude PM
+- [ ] Phase 6: Claude PM *(AI bots with local models done, see AI tournament; Claude next)*
 - [ ] Phase 7: Deploy to the homelab *(release pipeline done early, see Deployment)*
 - [ ] Phase 8: Polish
 
@@ -38,7 +38,15 @@ uv run arena backtest     # race the bots: metrics table + charts/backtest.png
 | 📈 | **Momentum** | Holds every stock whose 20-day average is above its 50-day average, split equally. |
 | 🔄 | **Mean Reversion** | Buys stocks that fell hard (RSI below 30) and sells when they bounce (RSI above 55). Up to 4 positions of 25% each. |
 | 🐒 | **Random Monkey** | Now and then picks 1–3 random stocks with random weights. Any strategy that can't beat it has no skill. |
-| 🤖 | **Claude PM** | *Coming in Phase 6.* |
+| 🧭 | **Faber Trend** | Monthly: each stock gets 1/6, held only while above its 200-day average (Faber 2007). |
+| 🥇 | **Dual Momentum** | Monthly: all-in on the stronger of SPY/QQQ over 12 months, cash if both fell (Antonacci). |
+| 🍰 | **Equal Weight** | 1/6 in everything, rebalanced monthly (DeMiguel et al. 2009: hard to beat). |
+| 🎚️ | **Vol Target** | SPY sized to aim for 15% yearly volatility (Moreira & Muir 2017). |
+| 🎯 | **Connors RSI2** | Buys 2-day dips in uptrends, sells on the bounce (Connors & Alvarez). |
+| 🏆 | **Winners 12-1** | Monthly: the 3 best performers from 12 to 1 months ago (Jegadeesh & Titman 1993). |
+| 🤖 | **AI bots** | A language model reads a market briefing every 5 trading days, picks weights and explains why. |
+
+The six research bots use their published parameters, untuned. Sources, rules, evidence and a full benchmark are in [docs/strategies.md](docs/strategies.md).
 
 ## How the backtest stays honest
 

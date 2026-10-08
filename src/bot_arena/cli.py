@@ -12,7 +12,7 @@ from bot_arena.config import BENCHMARK, STARTING_CASH, WATCHLIST, load_settings
 from bot_arena.db.cli import register as register_db
 from bot_arena.engine import run_backtest
 from bot_arena.risk import AnyKillSwitch, LocalKillSwitch, RiskLimits
-from bot_arena.strategies import SpyHodler, roster
+from bot_arena.strategies import SpyHodler, full_roster, roster
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
@@ -244,6 +244,72 @@ def cmd_api(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_tournament(args: argparse.Namespace) -> None:
+    """Rule bots vs LLM bots over one window, with warmup history before it."""
+    import json
+    import time
+
+    import pandas as pd
+
+    from bot_arena.strategies.llm import LLMManager, OllamaClient
+
+    bars = data.load_bars()
+    opens, closes = data.prices(bars, "open"), data.prices(bars, "close")
+    start = pd.Timestamp(args.start, tz="UTC")
+    limits = RiskLimits(allowed_symbols=frozenset(WATCHLIST))
+
+    bots = list(full_roster(args.seed))
+    emojis = iter("🤖🦾🧠👾🛸🔮")
+    for spec in filter(None, args.models.split(",")):
+        model, _, label = spec.partition("=")
+        bots.append(LLMManager(OllamaClient(model, args.ollama), label or model, args.every, next(emojis)))
+
+    results = []
+    for bot in bots:
+        started = time.perf_counter()
+        results.append(
+            run_backtest(bot, opens, closes, STARTING_CASH, 5.0, args.fee, limits, trade_from=start)
+        )
+        if isinstance(bot, LLMManager):
+            asked = sum(not e.cached for e in bot.journal)
+            failed = sum(e.targets is None for e in bot.journal)
+            print(
+                f"{bot.label}: {len(bot.journal)} decisions ({asked} new, {failed} failed) "
+                f"in {time.perf_counter() - started:.0f}s",
+                flush=True,
+            )
+
+    end = closes.index[-1].date()
+    print(
+        f"\nTournament {start.date()} -> {end}, ${STARTING_CASH:,.0f} each, LLMs decide every {args.every} days\n"
+    )
+    print(f"{'bot':<26}{'final $':>10}{'return':>9}{'Sharpe':>8}{'max DD':>9}{'trades':>8}{'invested':>10}")
+    for r in sorted(results, key=lambda r: -r.equity.iloc[-1]):
+        eq = r.equity
+        print(
+            f"{r.strategy.label:<25}{eq.iloc[-1]:>10,.2f}{metrics.total_return(eq):>9.1%}"
+            f"{metrics.sharpe(eq):>8.2f}{metrics.max_drawdown(eq):>9.1%}{len(r.fills):>8}"
+            f"{r.exposure.mean():>10.0%}"
+        )
+
+    journals = {b.name: b.journal_dicts() for b in bots if isinstance(b, LLMManager)}
+    out = Path(args.journal_out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(journals, indent=1, ensure_ascii=False))
+    print(f"\nJournals written to {out}")
+
+    if args.save:
+        from bot_arena.db import repository as repo
+
+        with repo.connect() as conn:
+            repo.migrate(conn)
+            params = {k: v for k, v in vars(args).items() if k != "func"} | {"tournament": True}
+            run_id = repo.save_backtest(conn, results, params, STARTING_CASH)
+            repo.save_journals(conn, run_id, journals)
+            repo.save_bars(conn, bars)
+        print(f"Saved as run #{run_id}")
+
+
 def cmd_account(args: argparse.Namespace) -> None:
     from alpaca.trading.client import TradingClient
 
@@ -324,6 +390,17 @@ def main() -> None:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--reload", action="store_true", help="restart on code changes (development)")
     p.set_defaults(func=cmd_api)
+
+    p = sub.add_parser("tournament", help="rule bots vs LLM bots over one window")
+    p.add_argument("--start", default="2026-01-02", help="first trading day (earlier days are warmup)")
+    p.add_argument("--models", default="gemma3:12b=Gemma 3 12B", help="model=Label,model=Label (Ollama)")
+    p.add_argument("--every", type=int, default=5, help="LLMs decide every N trading days")
+    p.add_argument("--fee", type=float, default=0.0)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--ollama", default="http://192.168.4.19:11434")
+    p.add_argument("--journal-out", default="data/journals/tournament.json")
+    p.add_argument("--save", action="store_true", help="store results and journals in the database")
+    p.set_defaults(func=cmd_tournament)
 
     p = sub.add_parser("account", help="check the Alpaca connection")
     p.set_defaults(func=cmd_account)

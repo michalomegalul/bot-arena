@@ -100,3 +100,21 @@ export interface FeedMessage {
   risk?: RiskEvent | null;
   equity?: EquitySeries | null;
 }
+
+/** One LLM decision with how it turned out (mirrors JournalEntry in api/models.py). */
+export interface JournalEntry {
+  id: number;
+  bot_id: number;
+  bot: string;
+  emoji: string;
+  model: string;
+  t: string;
+  targets: Record<string, number> | null;
+  reasoning: string;
+  confidence: number | null;
+  notes: string[];
+  seconds: number | null;
+  until: string | null;
+  outcome: number | null;
+  benchmark_outcome: number | null;
+}

@@ -12,6 +12,7 @@ All under `/api`. Interactive docs at `/api/docs` once running.
 | GET | `/api/runs/{run_id}/trades?limit=100&bot_id=` | `Trade[]`, newest first |
 | GET | `/api/runs/{run_id}/risk-events?limit=100&bot_id=` | `RiskEvent[]`, newest first |
 | GET | `/api/runs/{run_id}/bots/{bot_id}` | `BotDetail` |
+| GET | `/api/runs/{run_id}/journal?bot_id=` | `JournalEntry[]`, newest first: LLM decisions with their outcome |
 | GET | `/api/prices/{symbol}?start=&end=` | `PricePoint[]`, oldest first |
 | WS | `/api/runs/{run_id}/feed` | stream of `FeedMessage` (checked every 5 s) |
 

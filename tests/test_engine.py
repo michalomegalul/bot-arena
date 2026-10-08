@@ -56,3 +56,12 @@ def test_equity_and_exposure_tracking():
     result = run_backtest(Spy(), opens, closes, cash=1000, slippage_bps=0)
     assert result.equity.tolist() == pytest.approx([1000, 1000, 2000, 2000, 500])
     assert result.exposure.tolist() == pytest.approx([0, 1, 1, 1, 1])
+
+
+def test_warmup_days_are_history_only():
+    closes = frame([10, 11, 12, 13, 14])
+    spy = Spy()
+    result = run_backtest(spy, closes, closes, cash=1000, slippage_bps=0, trade_from=DATES[2])
+    assert result.equity.index[0] == DATES[2]
+    assert len(spy.seen[0]) == 3  # first decision already sees the 2 warmup days
+    assert result.fills[0].date == DATES[3]  # first fill: the open after the first decision

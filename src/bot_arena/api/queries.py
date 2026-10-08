@@ -9,6 +9,7 @@ from bot_arena.api.models import (
     BotSummary,
     EquityPoint,
     EquitySeries,
+    JournalEntry,
     Leaderboard,
     Position,
     PricePoint,
@@ -254,6 +255,64 @@ def bot_detail(conn: psycopg.Connection, run_id: int, bot_id: int) -> BotDetail:
         trades=trades(conn, run_id, limit=500, bot_id=bot_id),
         risk_events=risk_events(conn, run_id, limit=500, bot_id=bot_id),
     )
+
+
+# --- AI journal ---
+
+
+def journal(conn: psycopg.Connection, run_id: int, bot_id: int | None = None) -> list[JournalEntry]:
+    """LLM decisions, newest first, each with the bot's and the benchmark's return until the
+    bot's next decision (or the latest close, for the newest one)."""
+    run(conn, run_id)
+    rows = conn.execute(
+        """
+        SELECT j.id, j.bot_id, b.name, b.emoji, j.model, j.ts, j.targets, j.reasoning, j.confidence,
+               j.notes, j.stats
+        FROM journal j JOIN bots b ON b.id = j.bot_id
+        WHERE b.run_id = %s AND (%s::bigint IS NULL OR j.bot_id = %s)
+        ORDER BY j.ts DESC, j.id DESC
+        """,
+        (run_id, bot_id, bot_id),
+    ).fetchall()
+    if not rows:
+        return []
+
+    bots = _bots(conn, run_id)
+    frames = _equity_frames(conn, [b[0] for b in bots])
+    curves = {b_id: frames[b_id]["equity"].astype(float).rename(index=_day) for b_id, *_ in bots}
+    benchmark = next((curves[b_id] for b_id, name, *_ in bots if name == BENCHMARK), None)
+
+    def change(curve, start, end):
+        if curve is None or start not in curve.index or end not in curve.index:
+            return None
+        return float(curve[end] / curve[start] - 1)
+
+    next_decision: dict[int, str] = {}
+    out = []
+    for id_, b_id, name, emoji, model, ts, targets, reasoning, confidence, notes, stats in rows:
+        t = _day(ts)
+        curve = curves.get(b_id)
+        until = next_decision.get(b_id) or (curve.index[-1] if curve is not None and len(curve) else None)
+        next_decision[b_id] = t  # rows are newest first, so this is the next decision of the older row
+        out.append(
+            JournalEntry(
+                id=id_,
+                bot_id=b_id,
+                bot=name,
+                emoji=emoji,
+                model=model,
+                t=t,
+                targets=targets,
+                reasoning=reasoning,
+                confidence=confidence,
+                notes=notes,
+                seconds=stats.get("seconds"),
+                until=until if until and until > t else None,
+                outcome=change(curve, t, until) if until and until > t else None,
+                benchmark_outcome=change(benchmark, t, until) if until and until > t else None,
+            )
+        )
+    return out
 
 
 # --- prices ---

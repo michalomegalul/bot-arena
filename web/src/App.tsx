@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { Arena } from "./pages/Arena";
 import { BotPage } from "./pages/BotPage";
+import { Journal } from "./pages/Journal";
 import { NotFound } from "./pages/common";
 
 export function App() {
@@ -17,9 +18,7 @@ export function App() {
           <NavLink to="/" end>
             Arena
           </NavLink>
-          <span className="nav-disabled" aria-disabled="true" title="Coming in Phase 6">
-            Claude's Journal <span className="soon">soon</span>
-          </span>
+          <NavLink to="/journal">AI Journal</NavLink>
           <a className="nav-right" href="https://github.com/michalomegalul/bot-arena" target="_blank" rel="noreferrer">
             GitHub ↗
           </a>
@@ -29,6 +28,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Arena />} />
           <Route path="/bots/:runId/:botId" element={<BotPage />} />
+          <Route path="/journal" element={<Journal />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

@@ -37,7 +37,7 @@ def conn(test_url):
     with repo.connect(test_url) as conn:
         repo.migrate(conn)
         conn.execute(
-            "TRUNCATE equity_snapshots, trades, risk_events, positions, bots, runs, bars RESTART IDENTITY"
+            "TRUNCATE journal, equity_snapshots, trades, risk_events, positions, bots, runs, bars RESTART IDENTITY"
         )
         conn.commit()
         repo.set_kill_switch(conn, False, "")

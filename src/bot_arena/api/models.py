@@ -97,6 +97,25 @@ class BotDetail(BaseModel):
     risk_events: list[RiskEvent]  # newest first
 
 
+class JournalEntry(BaseModel):
+    """One LLM decision, with how it turned out (until the bot's next decision, or today)."""
+
+    id: int
+    bot_id: int
+    bot: str
+    emoji: str
+    model: str
+    t: str  # decided after this close; executed at the next open
+    targets: dict[str, float] | None  # None = held (the model's answer was unusable)
+    reasoning: str
+    confidence: float | None
+    notes: list[str]  # what had to be fixed in the model's answer
+    seconds: float | None
+    until: str | None  # end of the outcome window
+    outcome: float | None  # the bot's return over the window
+    benchmark_outcome: float | None  # SPY Hodler's return over the same window
+
+
 class PricePoint(BaseModel):
     t: str
     open: float

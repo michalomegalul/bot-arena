@@ -2,6 +2,7 @@ import type {
   BotDetail,
   EquitySeries,
   FeedMessage,
+  JournalEntry,
   Leaderboard,
   PricePoint,
   RiskEvent,
@@ -59,6 +60,8 @@ export const api = {
       : get(`/api/runs/${runId}/risk-events${query({ limit, bot_id: botId })}`),
   bot: (runId: number, botId: number): Promise<BotDetail> =>
     USE_MOCK ? mock.bot(runId, botId) : get(`/api/runs/${runId}/bots/${botId}`),
+  journal: (runId: number, botId?: number): Promise<JournalEntry[]> =>
+    USE_MOCK ? Promise.resolve([]) : get(`/api/runs/${runId}/journal${query({ bot_id: botId })}`),
   prices: (symbol: string, start?: string | null, end?: string | null): Promise<PricePoint[]> =>
     USE_MOCK
       ? mock.prices(symbol)

@@ -675,3 +675,92 @@ tbody th {
     transition: none !important;
   }
 }
+
+/* --- AI Journal --- */
+.journal-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+}
+.journal-filter button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.journal-filter button.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.journal {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 1rem;
+}
+.journal-entry header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.journal-bot {
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+.journal-entry time {
+  color: var(--muted);
+}
+.confidence {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 9rem;
+}
+.confidence .bar {
+  display: inline-block;
+  height: 6px;
+  max-width: 4rem;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.journal-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+.chip {
+  font-variant-numeric: tabular-nums;
+  padding: 0.15rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.chip.warn {
+  border-color: var(--down);
+  color: var(--down);
+}
+.journal-entry blockquote {
+  margin: 0;
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--border);
+  line-height: 1.55;
+}
+.journal-notes {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+}
+.journal-entry footer {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}

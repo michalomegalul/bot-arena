@@ -33,11 +33,13 @@ def run_backtest(
     fee_per_trade: float = 0.0,
     limits: RiskLimits | None = None,
     kill_switch: KillSwitch | None = None,
+    trade_from: pd.Timestamp | None = None,
 ) -> BacktestResult:
     """`opens` and `closes`: one row per trading day, one column per symbol.
 
     Every decision goes through a RiskManager. `limits=None` applies only the hard rules
-    (no shorting, no margin).
+    (no shorting, no margin). Days before `trade_from` are warmup: bots see them in their
+    history, but nothing trades and no equity is recorded.
     """
     broker = SimBroker(cash, slippage_bps, fee_per_trade)
     risk = RiskManager(strategy.name, limits or RiskLimits.unlimited(), kill_switch)
@@ -47,6 +49,8 @@ def run_backtest(
     pending: dict[str, float] | None = None
 
     for i, today in enumerate(closes.index):
+        if trade_from is not None and today < trade_from:
+            continue
         if pending is not None:
             yesterday = valuation.iloc[i - 1]
             broker.rebalance(pending, opens.loc[today], today, last_known=yesterday)

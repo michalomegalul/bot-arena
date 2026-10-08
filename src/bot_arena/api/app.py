@@ -20,6 +20,7 @@ from bot_arena.api.models import (
     BotDetail,
     EquitySeries,
     FeedMessage,
+    JournalEntry,
     Leaderboard,
     PricePoint,
     RiskEvent,
@@ -85,6 +86,10 @@ def create_app(database_url: str | None = None, web_dir: Path | None = None) -> 
     @app.get("/api/runs/{run_id}/bots/{bot_id}")
     def bot(run_id: int, bot_id: int) -> BotDetail:
         return db(queries.bot_detail, run_id, bot_id)
+
+    @app.get("/api/runs/{run_id}/journal")
+    def journal(run_id: int, bot_id: int | None = None) -> list[JournalEntry]:
+        return db(queries.journal, run_id, bot_id)
 
     @app.get("/api/prices/{symbol}")
     def prices(symbol: str, start: str | None = None, end: str | None = None) -> list[PricePoint]:

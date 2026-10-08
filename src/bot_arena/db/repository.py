@@ -183,3 +183,31 @@ class DbKillSwitch:
                 pass
             return f"kill switch unreadable ({type(exc).__name__}), halting to be safe"
         return (reason or "engaged in the database") if engaged else None
+
+
+def save_journals(conn: psycopg.Connection, run_id: int, journals: dict[str, list[dict]]) -> int:
+    """Store LLM bots' journal entries ({bot name: [JournalEntry as dict]}) for a saved run."""
+    bot_ids = dict(conn.execute("SELECT name, id FROM bots WHERE run_id = %s", (run_id,)).fetchall())
+    rows = [
+        (
+            bot_ids[name],
+            _ts(e["date"]),
+            e["model"],
+            Jsonb(e["targets"]) if e["targets"] is not None else None,
+            e["reasoning"],
+            e["confidence"],
+            Jsonb(e["notes"]),
+            Jsonb(e["stats"]),
+        )
+        for name, entries in journals.items()
+        for e in entries
+        if name in bot_ids
+    ]
+    with conn.transaction(), conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO journal (bot_id, ts, model, targets, reasoning, confidence, notes, stats) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (bot_id, ts) DO NOTHING",
+            rows,
+        )
+    conn.commit()
+    return len(rows)
