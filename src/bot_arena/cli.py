@@ -103,10 +103,11 @@ def _backtest(args: argparse.Namespace, conn) -> None:
     print(f"\nChart written to {out}")
 
     if conn is not None:
-        from bot_arena.db.repository import save_backtest
+        from bot_arena.db.repository import save_backtest, save_bars
 
         params = {k: v for k, v in vars(args).items() if k != "func"}
         run_id = save_backtest(conn, results, params, STARTING_CASH)
+        save_bars(conn, bars)  # so the UI can draw price charts for this run
         print(f"Saved as run #{run_id} (see `arena db runs`)")
 
 
@@ -230,6 +231,19 @@ def cmd_recorder(args: argparse.Namespace) -> None:
     run_recorder(conn, log, log.topic)
 
 
+def cmd_api(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "bot_arena.api.app:create_app",
+        factory=True,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        reload_dirs=["src"] if args.reload else None,  # not web/node_modules
+    )
+
+
 def cmd_account(args: argparse.Namespace) -> None:
     from alpaca.trading.client import TradingClient
 
@@ -304,6 +318,12 @@ def main() -> None:
     p = sub.add_parser("recorder", help="service: mirror the log into the database")
     p.add_argument("--topic", default=None)
     p.set_defaults(func=cmd_recorder)
+
+    p = sub.add_parser("api", help="service: the web UI and its read-only API")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--reload", action="store_true", help="restart on code changes (development)")
+    p.set_defaults(func=cmd_api)
 
     p = sub.add_parser("account", help="check the Alpaca connection")
     p.set_defaults(func=cmd_account)

@@ -80,9 +80,13 @@ def save_backtest(
 
 
 def save_bars(conn: psycopg.Connection, bars: pd.DataFrame) -> int:
-    """Upsert daily bars (indexed by symbol, timestamp, as from Alpaca). Returns rows written."""
+    """Upsert daily bars (indexed by symbol, timestamp, as from Alpaca). Returns rows written.
+
+    Alpaca stamps a daily bar at midnight New York time (04:00 or 05:00 UTC). Like every
+    other table, `bars` stores a trading day at 00:00 UTC, so both writers agree on the key.
+    """
     rows = [
-        (sym, _ts(ts), float(b.open), float(b.high), float(b.low), float(b.close), float(b.volume))
+        (sym, _ts(pd.Timestamp(ts).tz_convert("America/New_York").strftime("%Y-%m-%d")), float(b.open), float(b.high), float(b.low), float(b.close), float(b.volume))
         for (sym, ts), b in bars.iterrows()
     ]
     with conn.transaction(), conn.cursor() as cur:
