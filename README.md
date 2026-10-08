@@ -12,7 +12,7 @@ Runs on **paper money** (Alpaca paper trading). See [PLAN.md](PLAN.md) for the f
 - [ ] Phase 4: Streaming pipeline (Redpanda)
 - [ ] Phase 5: API and arena UI
 - [ ] Phase 6: Claude PM
-- [ ] Phase 7: Deploy to the homelab
+- [ ] Phase 7: Deploy to the homelab *(release pipeline done early, see Deployment)*
 - [ ] Phase 8: Polish
 
 ## Quick start
@@ -108,6 +108,26 @@ uv run arena db kill off
 ```
 
 The risk manager checks both kill switches (the database row and the local `data/KILL` file). If the database can't be read, it **fails closed** and halts trading.
+
+## Deployment
+
+Runs on a Proxmox LXC in the homelab (Debian 13 + Docker), from [`deploy/`](deploy/).
+
+1. Publish a **GitHub Release** (e.g. `v0.3.0`).
+2. The [Release workflow](.github/workflows/release.yml) builds the Docker image on GitHub's runners and pushes it to `ghcr.io/michalomegalul/bot-arena`.
+3. On the server, `arena-deploy.timer` runs [`deploy.sh`](deploy/deploy.sh) every 5 minutes. It sees the new release, pulls the image and the release's `compose.yml`, and runs the database migrations.
+
+**Deploys are pull-based:** the repo is public, and a self-hosted runner would let any pull request run code inside the home network. Here nothing on GitHub can reach the server; it only ever reads public releases.
+
+Secrets (Alpaca keys, database password) live only in `/opt/bot-arena/.env` on the server, readable by root only.
+
+```sh
+# on the server
+cd /opt/bot-arena
+docker compose run --rm arena backtest --save
+docker compose run --rm arena db runs
+systemctl list-timers arena-deploy.timer
+```
 
 ## Development
 
