@@ -7,7 +7,7 @@ Runs on **paper money** (Alpaca paper trading). See [PLAN.md](PLAN.md) for the f
 ## Status
 
 - [x] **Phase 1: Hello market.** Download daily prices and chart $1000 bought and held in each stock.
-- [ ] Phase 2: Backtester and the first bots
+- [x] **Phase 2: Backtester and the first bots.** Four bots race through history, with fees, slippage and a full metrics table.
 - [ ] Phase 3: Database and risk manager
 - [ ] Phase 4: Streaming pipeline (Redpanda)
 - [ ] Phase 5: API and arena UI
@@ -25,9 +25,46 @@ uv sync
 uv run arena account      # check the connection
 uv run arena fetch        # daily bars since Jan 1 -> data/
 uv run arena chart        # results table + charts/buy_and_hold.png
+uv run arena backtest     # race the bots: metrics table + charts/backtest.png
 ```
 
-`arena fetch --start 2024-01-01` fetches a longer history.
+`arena fetch --start 2023-01-01` fetches a longer history. `arena backtest --help` lists the options (slippage, fees, the monkey's seed).
+
+## The bots
+
+| | Bot | Strategy |
+|---|---|---|
+| 🐢 | **SPY Hodler** | Buys the S&P 500 on day one and never sells. The benchmark. |
+| 📈 | **Momentum** | Holds every stock whose 20-day average is above its 50-day average, split equally. |
+| 🔄 | **Mean Reversion** | Buys stocks that fell hard (RSI below 30) and sells when they bounce (RSI above 55). Up to 4 positions of 25% each. |
+| 🐒 | **Random Monkey** | Now and then picks 1–3 random stocks with random weights. Any strategy that can't beat it has no skill. |
+| 🤖 | **Claude PM** | *Coming in Phase 6.* |
+
+## How the backtest stays honest
+
+- **No lookahead:** a bot decides after a day's close, sees only prices up to that day, and its orders fill at the **next day's open**. A test proves the engine never hands a bot future data.
+- **Costs:** every trade pays slippage (5 bps by default) and an optional fee.
+- **No shorting, no margin:** weights must be positive and add up to at most 100%.
+
+## First results (Jan 2023 to Oct 2026, $1000 each)
+
+| Bot | Final | Return | Sharpe | Max drawdown | Trades |
+|---|---|---|---|---|---|
+| 🐒 Random Monkey | $3,181 | +218% | 1.00 | −35% | 312 |
+| 🐢 **SPY Hodler** | **$2,126** | **+113%** | **1.43** | **−19%** | 1 |
+| 📈 Momentum | $2,062 | +106% | 0.99 | −31% | 361 |
+| 🔄 Mean Reversion | $1,343 | +34% | 0.68 | −18% | 46 |
+
+**The monkey "won", and that's the most useful result here.** Across 50 random seeds the monkey beats SPY in dollars 44 times, but on risk-adjusted return (Sharpe) only 12 times. The watchlist (NVDA, AAPL, MSFT, QQQ, TSLA) was picked in 2026, *knowing* these stocks had a huge run, so throwing darts at it mostly hits winners. That's **survivorship bias**, and it means beating SPY on this list proves very little. No rule-based bot beats SPY on risk-adjusted terms.
+
+With a $1 fee per trade, Momentum drops from $2,062 to $1,610: at $1000, costs matter a lot.
+
+### Known limitations
+
+- **Hindsight watchlist** (see above) and a single 3.75-year, mostly bull-market sample. Strategy parameters aren't validated out of sample yet.
+- **Sharpe and Sortino use a risk-free rate of 0.** T-bills paid ~4–5% in this period, so both are overstated.
+- **Prices are adjusted for dividends,** so returns assume dividends were reinvested. A live bot would receive cash instead.
+- **Fills** are at the next open with flat slippage, with no volume or liquidity limits. An order is dropped if its symbol has no price the next morning.
 
 ## Development
 

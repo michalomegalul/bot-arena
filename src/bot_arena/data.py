@@ -1,6 +1,6 @@
 """Download daily price bars from Alpaca and cache them locally."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -18,16 +18,16 @@ BARS_FILE = DATA_DIR / "bars_daily.parquet"
 def fetch_daily_bars(settings: Settings, symbols: list[str], start: datetime) -> pd.DataFrame:
     """Daily OHLCV bars, indexed by (symbol, timestamp).
 
-    Uses the full-market SIP feed. The free plan only allows SIP data older than
-    15 minutes, so the request ends 20 minutes ago. Prices are adjusted for splits
-    and dividends, so buy-and-hold returns are total returns.
+    Uses the full-market SIP feed (the free plan allows SIP data older than 15 minutes).
+    Ends at midnight UTC, so today's unfinished bar is never cached. Prices are
+    adjusted for splits and dividends, so buy-and-hold returns are total returns.
     """
     client = StockHistoricalDataClient(settings.api_key, settings.secret_key)
     request = StockBarsRequest(
         symbol_or_symbols=symbols,
         timeframe=TimeFrame.Day,
         start=start,
-        end=datetime.now(UTC) - timedelta(minutes=20),
+        end=datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0),
         adjustment=Adjustment.ALL,
         feed=DataFeed.SIP,
     )
@@ -47,6 +47,11 @@ def load_bars(path: Path = BARS_FILE) -> pd.DataFrame:
 
 def closes(bars: pd.DataFrame) -> pd.DataFrame:
     """Close prices as a wide table: one row per day, one column per symbol."""
-    wide = bars["close"].unstack(level="symbol")
+    return prices(bars, "close")
+
+
+def prices(bars: pd.DataFrame, field: str) -> pd.DataFrame:
+    """One price field ("open", "close", ...) as a wide table: one row per day, one column per symbol."""
+    wide = bars[field].unstack(level="symbol")
     wide.index = pd.to_datetime(wide.index).normalize()
     return wide.sort_index()
