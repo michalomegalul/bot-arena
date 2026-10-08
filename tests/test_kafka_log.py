@@ -117,3 +117,24 @@ def test_catch_up_appends_missing_outputs_once(log):
     catch_up(Echo(), log)
     decisions = [e for _, e in log.read() if e.type == ev.DECISION]
     assert len(decisions) == 4 and len({d.id for d in decisions}) == 4
+
+
+def test_replay_through_redpanda_matches_the_backtest(log):
+    """The whole pipeline over a real Redpanda topic gives exactly the backtest's equity."""
+    from test_pipeline import market, roster
+
+    from bot_arena.engine import run_backtest
+    from bot_arena.pipeline.pipeline import equity_curves, replay
+    from bot_arena.pipeline.services import BotService, BrokerService
+    from bot_arena.risk import RiskLimits
+
+    opens, closes = market(n=80)
+    limits = RiskLimits()
+    bots = roster()
+    run_event = ev.run(ev.day(closes.index[0]), [b.name for b in bots], 1000, 5.0, 1.0)
+    replay([BrokerService(), *(BotService(b, limits) for b in bots)], opens, closes, run_event, log=log)
+
+    curves = equity_curves(log)
+    for bot in roster():
+        expected = run_backtest(bot, opens, closes, 1000, 5.0, 1.0, limits).equity
+        assert curves[bot.name].tolist() == expected.tolist(), bot.name

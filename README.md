@@ -109,7 +109,7 @@ Alpaca                     recorder ──► PostgreSQL + TimescaleDB (for the 
 
 That design pays off in three ways:
 
-- **Replay = backtest, exactly.** `arena replay` pushes history through the real services. 944 days become 14,965 events, and every bot's equity matches `arena backtest` to the last cent. `arena replay --kafka TOPIC` does the same through Redpanda with each service as its own process (71 s), and tests check it on every push.
+- **Replay = backtest, exactly.** `arena replay` pushes history through the real services. 944 days become 14,965 events, and every bot's equity matches `arena backtest` to the last cent. `arena replay --kafka TOPIC` does the same through Redpanda with each service as its own process (71 s). CI replays through a real Redpanda on every push and checks the equity matches exactly.
 - **Crash-safe.** A restarted service rereads the log to rebuild its state. Every event has a deterministic id, so the service only publishes outputs that are actually missing, for example one lost in a crash. Bots that use an LLM (Phase 6) reuse their logged decisions instead of paying to ask again.
 - **The run explains itself.** Its configuration is the first event, and `warmup` bars give the bots price history from before day one.
 
