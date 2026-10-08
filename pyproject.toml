@@ -10,11 +10,13 @@ requires-python = ">=3.12"
 dependencies = [
     "alpaca-py>=0.44.0",
     "confluent-kafka>=2.16.0",
+    "fastapi>=0.142.4",
     "matplotlib>=3.11.2",
     "pandas>=3.0.6",
     "psycopg[binary]>=3.3.6",
     "pyarrow>=25.0.1",
     "python-dotenv>=1.2.4",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]
@@ -29,6 +31,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "ruff>=0.16.10",
 ]
