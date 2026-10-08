@@ -5,11 +5,12 @@ a strategy decides after the close of day t, seeing only closes up to t,
 and its orders fill at the OPEN of day t+1.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
 from bot_arena.broker import Fill, SimBroker
+from bot_arena.risk import RiskEvent
 from bot_arena.strategies.base import Strategy
 
 
@@ -19,6 +20,8 @@ class BacktestResult:
     equity: pd.Series  # portfolio value at each close
     exposure: pd.Series  # fraction of equity invested at each close
     fills: list[Fill]
+    events: list[RiskEvent] = field(default_factory=list)  # everything the risk manager did
+    status: str = "active"  # "active" | "eliminated"
 
 
 def run_backtest(
