@@ -105,6 +105,39 @@ The **AI Journal** page shows every decision in the model's own words, what had 
 
 ![AI Journal](docs/journal.png)
 
+### Is it skill, luck, or memory? (`arena experiment`)
+
+Two follow-up experiments, with all tables in [docs/ai_experiments.md](docs/ai_experiments.md):
+
+**1. Luck: each model 5 more times with sampling on (temperature 0.7), 2026 window.**
+
+| Model | Single run (temp 0) | 5 sampled runs | Beat SPY | Beat QQQ |
+|---|---|---|---|---|
+| Gemma 3 12B | +18.9% | +7.8% … +17.9% (median +12.3%) | 2/5 | 0/5 |
+| Gemma 4 e4b | +19.7% | +16.3% … +19.3% | 5/5 | 0/5 |
+| Qwen 2.5 Coder 14B | +20.8% | +15.6% … +24.1% | 5/5 | 2/5 |
+| Qwen 3 8B | +18.6% | +18.1% … +20.5% | 5/5 | 0/5 |
+
+Gemma 3's tournament result was a lucky draw: it's above all five of its sampled runs, and its typical run doesn't beat SPY. Only 2 of the 20 sampled runs beat simply holding QQQ (+22.7%). Swapping two words in the prompt ("SPY and QQQ" vs "QQQ and SPY") moved Gemma 3 by 2 points even at temperature 0.
+
+**2. Memory: real names and dates vs anonymized** (STOCK_A… FUND_1…, "trading day 12", prices relative to a year ago), in a window the models were trained on (2023–24) and after it (2026).
+
+| Model | 2023–24: named / anonymous | 2026: named / anonymous |
+|---|---|---|
+| Gemma 3 12B | +136% / +95% | +18.9% / +13.8% |
+| Gemma 4 e4b | +178% / +158% | +19.7% / +15.2% |
+| Qwen 2.5 Coder 14B | +107% / +129% | +20.8% / +15.6% |
+| Qwen 3 8B | +76% / +82% | +18.6% / +21.6% |
+
+Benchmarks: SPY +57% and QQQ +94% in 2023–24, SPY +14% and QQQ +23% in 2026.
+
+- **The Gemma models do much better when they can see the names** in the years they were trained on (+41 and +20 points). Their holdings show why: Gemma 3 held 17% Nvidia as "NVDA" but 7% as "STOCK_D", on identical data. The Qwen models did *better* anonymized, so memorization depends on the model.
+- **Names still help a little after training** (about +5 points for three of four models in 2026). Knowing that "NVDA" is a famous AI company is a bias even without knowing 2026 prices.
+- **Even anonymized, every model beat SPY in 2023–24**, because the data itself showed one stock surging and they followed the trend. That's momentum in a trending market, not foresight. Most runs land near QQQ.
+
+**Verdict:** no evidence of skill. The AI results are explained by being tilted towards tech in tech-led years, run-to-run luck, and for some models, what they already "know" about famous company names.
+
+
 ## Risk manager
 
 Bots only *propose* trades. Every proposal passes the risk manager first, which can shrink, drop or block it, but never make it bigger.
